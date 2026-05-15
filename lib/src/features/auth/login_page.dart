@@ -2,6 +2,7 @@ import 'package:dockge_app/src/core/domain/domain.dart' as domain;
 import 'package:dockge_app/src/core/session/session.dart';
 import 'package:dockge_app/src/core/storage/storage.dart';
 import 'package:dockge_app/src/features/common/feature_localizations.dart';
+import 'package:dockge_app/src/features/common/feature_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -55,8 +56,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               padding: const EdgeInsets.all(24),
               shrinkWrap: true,
               children: [
-                Icon(Icons.dns_rounded, size: 48, color: colorScheme.primary),
-                const SizedBox(height: 16),
+                // Logo 区域
+                Center(
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          colorScheme.primary,
+                          colorScheme.primaryContainer,
+                        ],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.dns_rounded,
+                      size: 40,
+                      color: colorScheme.onPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
                 Text(
                   _setupMode ? l10n.setupTitle : l10n.loginTitle,
                   textAlign: TextAlign.center,
@@ -64,112 +87,174 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 24),
-                Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      if (_setupMode) ...[
-                        TextFormField(
-                          controller: _nameController,
-                          decoration: InputDecoration(
-                            labelText: l10n.serverName,
-                          ),
-                          validator: (value) => _required(context, value),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      TextFormField(
-                        controller: _urlController,
-                        decoration: InputDecoration(labelText: l10n.serverUrl),
-                        keyboardType: TextInputType.url,
-                        validator: (value) => _required(context, value),
-                      ),
-                      const SizedBox(height: 12),
-                      SegmentedButton<domain.AuthType>(
-                        segments: [
-                          ButtonSegment(
-                            value: domain.AuthType.password,
-                            label: Text(l10n.passwordAuth),
-                            icon: const Icon(Icons.lock_outline),
-                          ),
-                          ButtonSegment(
-                            value: domain.AuthType.token,
-                            label: Text(l10n.tokenAuth),
-                            icon: const Icon(Icons.key_rounded),
-                          ),
-                        ],
-                        selected: {_authType},
-                        onSelectionChanged: (value) =>
-                            setState(() => _authType = value.first),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_authType == domain.AuthType.password) ...[
-                        TextFormField(
-                          controller: _usernameController,
-                          decoration: InputDecoration(labelText: l10n.username),
-                          validator: (value) => _required(context, value),
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _passwordController,
-                          decoration: InputDecoration(labelText: l10n.password),
-                          obscureText: true,
-                          validator: (value) => _required(context, value),
-                        ),
-                      ] else
-                        TextFormField(
-                          controller: _tokenController,
-                          decoration: InputDecoration(
-                            labelText: l10n.accessToken,
-                          ),
-                          obscureText: true,
-                          validator: (value) => _required(context, value),
-                        ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(l10n.allowSelfSigned),
-                        value: _tlsMode == domain.TlsMode.allowSelfSigned,
-                        onChanged: (value) => setState(() {
-                          _tlsMode = value
-                              ? domain.TlsMode.allowSelfSigned
-                              : domain.TlsMode.system;
-                        }),
-                      ),
-                      const SizedBox(height: 16),
-                      if (session.error != null) ...[
-                        Text(
-                          session.error!,
-                          style: TextStyle(color: colorScheme.error),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      FilledButton.icon(
-                        onPressed: session.connecting || session.restoring
-                            ? null
-                            : () => _connect(context),
-                        icon: session.connecting || session.restoring
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.login_rounded),
-                        label: Text(
-                          _setupMode ? l10n.saveServer : l10n.connect,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () =>
-                            setState(() => _setupMode = !_setupMode),
-                        child: Text(
-                          _setupMode ? l10n.connect : l10n.setupTitle,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 6),
+                Text(
+                  _t(l10n, 'Manage your Docker stacks', '管理你的 Docker 堆栈'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
                   ),
+                ),
+                const SizedBox(height: 28),
+                // 表单卡片
+                DockgeCard(
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        if (_setupMode) ...[
+                          TextFormField(
+                            controller: _nameController,
+                            decoration: InputDecoration(
+                              labelText: l10n.serverName,
+                              prefixIcon: const Icon(Icons.label_rounded),
+                            ),
+                            validator: (value) => _required(context, value),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+                        TextFormField(
+                          controller: _urlController,
+                          decoration: InputDecoration(
+                            labelText: l10n.serverUrl,
+                            prefixIcon: const Icon(Icons.link_rounded),
+                          ),
+                          keyboardType: TextInputType.url,
+                          validator: (value) => _required(context, value),
+                        ),
+                        const SizedBox(height: 14),
+                        // 认证方式选择器
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            color: colorScheme.surfaceContainerLowest,
+                            border: Border.all(color: colorScheme.outlineVariant),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _AuthTypeButton(
+                                  icon: Icons.lock_outline,
+                                  label: l10n.passwordAuth,
+                                  selected: _authType == domain.AuthType.password,
+                                  onTap: () => setState(
+                                    () => _authType = domain.AuthType.password,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: _AuthTypeButton(
+                                  icon: Icons.key_rounded,
+                                  label: l10n.tokenAuth,
+                                  selected: _authType == domain.AuthType.token,
+                                  onTap: () => setState(
+                                    () => _authType = domain.AuthType.token,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        if (_authType == domain.AuthType.password) ...[
+                          TextFormField(
+                            controller: _usernameController,
+                            decoration: InputDecoration(
+                              labelText: l10n.username,
+                              prefixIcon: const Icon(Icons.person_rounded),
+                            ),
+                            validator: (value) => _required(context, value),
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _passwordController,
+                            decoration: InputDecoration(
+                              labelText: l10n.password,
+                              prefixIcon: const Icon(Icons.lock_rounded),
+                            ),
+                            obscureText: true,
+                            validator: (value) => _required(context, value),
+                          ),
+                        ] else
+                          TextFormField(
+                            controller: _tokenController,
+                            decoration: InputDecoration(
+                              labelText: l10n.accessToken,
+                              prefixIcon: const Icon(Icons.vpn_key_rounded),
+                            ),
+                            obscureText: true,
+                            validator: (value) => _required(context, value),
+                          ),
+                        const SizedBox(height: 10),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          secondary: const Icon(Icons.security_rounded),
+                          title: Text(l10n.allowSelfSigned),
+                          value: _tlsMode == domain.TlsMode.allowSelfSigned,
+                          onChanged: (value) => setState(() {
+                            _tlsMode = value
+                                ? domain.TlsMode.allowSelfSigned
+                                : domain.TlsMode.system;
+                          }),
+                        ),
+                        const SizedBox(height: 18),
+                        if (session.error != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colorScheme.errorContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.error_outline_rounded,
+                                  color: colorScheme.onErrorContainer,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    session.error!,
+                                    style: TextStyle(
+                                      color: colorScheme.onErrorContainer,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: session.connecting || session.restoring
+                                ? null
+                                : () => _connect(context),
+                            icon: session.connecting || session.restoring
+                                ? SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: colorScheme.onPrimary,
+                                    ),
+                                  )
+                                : const Icon(Icons.login_rounded),
+                            label: Text(
+                              _setupMode ? l10n.saveServer : l10n.connect,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => setState(() => _setupMode = !_setupMode),
+                  child: Text(_setupMode ? l10n.connect : l10n.setupTitle),
                 ),
               ],
             ),
@@ -177,6 +262,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
       ),
     );
+  }
+
+  String _t(FeatureLocalizations l10n, String en, String zh) {
+    return l10n.active == 'Active' ? en : zh;
   }
 
   String? _required(BuildContext context, String? value) {
@@ -233,5 +322,53 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (_) {
       // Ignore storage errors and fall back to manual entry.
     }
+  }
+}
+
+class _AuthTypeButton extends StatelessWidget {
+  const _AuthTypeButton({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? scheme.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

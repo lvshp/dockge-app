@@ -58,26 +58,37 @@ class _ComposeEditorPageState extends ConsumerState<ComposeEditorPage>
   Widget build(BuildContext context) {
     final l10n = FeatureLocalizations.of(context);
     final session = ref.watch(dockgeSessionProvider);
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.composeEditor),
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: l10n.compose),
-            Tab(text: l10n.environment),
+            Tab(
+              icon: const Icon(Icons.code_rounded, size: 18),
+              text: l10n.compose,
+            ),
+            Tab(
+              icon: const Icon(Icons.key_rounded, size: 18),
+              text: l10n.environment,
+            ),
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: _editMode ? l10n.cancel : l10n.edit,
-            onPressed: session.connected
-                ? () => setState(() => _editMode = !_editMode)
-                : null,
-            icon: Icon(
+          // 编辑/只读模式切换
+          FilterChip(
+            selected: _editMode,
+            label: Text(_editMode ? l10n.cancel : l10n.edit),
+            avatar: Icon(
               _editMode ? Icons.visibility_rounded : Icons.edit_rounded,
+              size: 18,
             ),
+            onSelected: session.connected
+                ? (value) => setState(() => _editMode = value)
+                : null,
           ),
+          const SizedBox(width: 8),
           IconButton(
             tooltip: l10n.save,
             onPressed: _editMode ? () => _save(deploy: false) : null,
@@ -89,14 +100,20 @@ class _ComposeEditorPageState extends ConsumerState<ComposeEditorPage>
         future: _detailFuture,
         builder: (context, snapshot) {
           if (!session.connected) {
-            return EmptyState(message: l10n.connectToServerFirst);
+            return EmptyState(
+              message: l10n.connectToServerFirst,
+              icon: Icons.cloud_off_rounded,
+            );
           }
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
           final result = snapshot.data;
           if (result == null || !result.ok) {
-            return EmptyState(message: result?.message ?? l10n.stackLoadFailed);
+            return EmptyState(
+              message: result?.message ?? l10n.stackLoadFailed,
+              icon: Icons.error_outline_rounded,
+            );
           }
           return TabBarView(
             controller: _tabController,
@@ -107,27 +124,36 @@ class _ComposeEditorPageState extends ConsumerState<ComposeEditorPage>
           );
         },
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _editMode ? () => _save(deploy: false) : null,
-                  icon: const Icon(Icons.save_rounded),
-                  label: Text(l10n.saveCompose),
+      // 底部操作栏
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          border: Border(
+            top: BorderSide(color: scheme.outlineVariant),
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _editMode ? () => _save(deploy: false) : null,
+                    icon: const Icon(Icons.save_rounded, size: 18),
+                    label: Text(l10n.saveCompose),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _editMode ? () => _save(deploy: true) : null,
-                  icon: const Icon(Icons.rocket_launch_rounded),
-                  label: Text(l10n.deployStack),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _editMode ? () => _save(deploy: true) : null,
+                    icon: const Icon(Icons.rocket_launch_rounded, size: 18),
+                    label: Text(l10n.deployStack),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -205,17 +231,34 @@ class _EditorPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: TextField(
-        controller: controller,
-        expands: true,
-        maxLines: null,
-        minLines: null,
-        readOnly: readOnly,
-        textAlignVertical: TextAlignVertical.top,
-        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-        decoration: const InputDecoration(alignLabelWithHint: true),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: TextField(
+          controller: controller,
+          expands: true,
+          maxLines: null,
+          minLines: null,
+          readOnly: readOnly,
+          textAlignVertical: TextAlignVertical.top,
+          style: TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 13,
+            color: scheme.onSurface,
+          ),
+          decoration: InputDecoration(
+            alignLabelWithHint: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
       ),
     );
   }

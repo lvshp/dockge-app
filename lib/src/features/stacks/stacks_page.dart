@@ -52,47 +52,43 @@ class _StacksPageState extends ConsumerState<StacksPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
+          // 搜索框
+          SearchBar(
             controller: _searchController,
-            decoration: InputDecoration(
-              labelText: l10n.searchStacks,
-              prefixIcon: const Icon(Icons.search_rounded),
-            ),
+            hintText: l10n.searchStacks,
+            leading: const Icon(Icons.search_rounded),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
+          // 筛选 FilterChip
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: SegmentedButton<_StackFilter>(
-              segments: [
-                ButtonSegment(value: _StackFilter.all, label: Text(l10n.all)),
-                ButtonSegment(
-                  value: _StackFilter.running,
-                  label: Text(l10n.running),
-                ),
-                ButtonSegment(
-                  value: _StackFilter.stopped,
-                  label: Text(l10n.stopped),
-                ),
-                ButtonSegment(
-                  value: _StackFilter.partial,
-                  label: Text(l10n.partial),
-                ),
-                ButtonSegment(
-                  value: _StackFilter.inactive,
-                  label: Text(l10n.inactive),
-                ),
-              ],
-              selected: {_filter},
-              onSelectionChanged: (value) =>
-                  setState(() => _filter = value.first),
+            child: Row(
+              children: _StackFilter.values
+                  .map(
+                    (filter) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        selected: _filter == filter,
+                        label: Text(_filterLabel(l10n, filter)),
+                        onSelected: (_) => setState(() => _filter = filter),
+                      ),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
           const SizedBox(height: 16),
           if (!session.connected)
-            EmptyState(message: l10n.connectToServerFirst)
+            EmptyState(
+              message: l10n.connectToServerFirst,
+              icon: Icons.cloud_off_rounded,
+            )
           else if (stacks.isEmpty)
-            EmptyState(message: l10n.noStacks)
+            EmptyState(
+              message: l10n.noStacks,
+              icon: Icons.inbox_outlined,
+            )
           else
             ...stacks.map(
               (stack) => Padding(
@@ -104,13 +100,21 @@ class _StacksPageState extends ConsumerState<StacksPage> {
       ),
     );
   }
+
+  String _filterLabel(FeatureLocalizations l10n, _StackFilter filter) {
+    return switch (filter) {
+      _StackFilter.all => l10n.all,
+      _StackFilter.running => l10n.running,
+      _StackFilter.stopped => l10n.stopped,
+      _StackFilter.inactive => l10n.inactive,
+    };
+  }
 }
 
 enum _StackFilter {
   all(null),
   running(domain.StackStatus.running),
   stopped(domain.StackStatus.stopped),
-  partial(domain.StackStatus.partial),
   inactive(domain.StackStatus.inactive);
 
   const _StackFilter(this.status);
@@ -126,21 +130,75 @@ class _StackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = FeatureLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final statusColorVal = statusColor(context, stack.status);
+
     return DockgeCard(
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(
-          stack.name,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Text(
-          '${stack.composePath ?? stack.endpoint ?? 'Dockge'}\n'
-          '${l10n.servicesCount(stack.serviceCount)}',
-        ),
-        isThreeLine: true,
-        leading: const Icon(Icons.layers_rounded),
-        trailing: StatusPill(status: stack.status),
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
         onTap: () => context.push('/stacks/${Uri.encodeComponent(stack.name)}'),
+        child: IntrinsicHeight(
+          child: Row(
+            children: [
+              // 左侧状态色竖条
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: statusColorVal,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    bottomLeft: Radius.circular(16),
+                  ),
+                ),
+              ),
+            // 内容区
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stack.name,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            stack.composePath ?? stack.endpoint ?? 'Dockge',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (stack.serviceCount > 0) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              l10n.servicesCount(stack.serviceCount),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    StatusPill(status: stack.status),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        ),
       ),
     );
   }

@@ -10,7 +10,11 @@ class AuditPage extends StatelessWidget {
     final l10n = FeatureLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(l10n.auditTrail)),
-      body: EmptyState(message: l10n.noLocalOperations),
+      body: EmptyState(
+        message: l10n.noLocalOperations,
+        icon: Icons.history_rounded,
+        title: l10n.auditTrail,
+      ),
     );
   }
 }

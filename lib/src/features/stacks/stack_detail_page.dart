@@ -64,14 +64,20 @@ class _StackDetailPageState extends ConsumerState<StackDetailPage> {
         future: _detailFuture,
         builder: (context, snapshot) {
           if (!session.connected) {
-            return EmptyState(message: l10n.connectToServerFirst);
+            return EmptyState(
+              message: l10n.connectToServerFirst,
+              icon: Icons.cloud_off_rounded,
+            );
           }
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
           final result = snapshot.data;
           if (result == null || !result.ok || result.data == null) {
-            return EmptyState(message: result?.message ?? l10n.stackLoadFailed);
+            return EmptyState(
+              message: result?.message ?? l10n.stackLoadFailed,
+              icon: Icons.error_outline_rounded,
+            );
           }
           return _DetailContent(
             detail: result.data!,
@@ -112,9 +118,11 @@ class _DetailContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = FeatureLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Stack 信息卡
         DockgeCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,8 +131,8 @@ class _DetailContent extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      l10n.stackDetail,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      detail.summary.name,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -133,8 +141,28 @@ class _DetailContent extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              Text(detail.summary.composePath ?? detail.summary.name),
-              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.description_rounded,
+                    size: 16,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      detail.summary.composePath ?? detail.summary.name,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // 操作按钮
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -144,12 +172,8 @@ class _DetailContent extends ConsumerWidget {
                     OperationType.stop,
                     OperationType.restart,
                     OperationType.update,
-                    OperationType.down,
-                    OperationType.delete,
                   ])
-                    ActionChip(
-                      avatar: Icon(_operationIcon(type), size: 18),
-                      label: Text(operationLabel(l10n, type)),
+                    FilledButton.tonal(
                       onPressed: () =>
                           _confirmStackOperation(
                             context,
@@ -159,13 +183,75 @@ class _DetailContent extends ConsumerWidget {
                           ).then((changed) {
                             if (changed) onRefresh();
                           }),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_operationIcon(type), size: 16),
+                          const SizedBox(width: 4),
+                          Text(operationLabel(l10n, type)),
+                        ],
+                      ),
                     ),
+                  // Down 按钮 — 警告色
+                  FilledButton.tonal(
+                    onPressed: () =>
+                        _confirmStackOperation(
+                          context,
+                          ref,
+                          detail.summary,
+                          OperationType.down,
+                        ).then((changed) {
+                          if (changed) onRefresh();
+                        }),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: scheme.tertiaryContainer,
+                      foregroundColor: scheme.onTertiaryContainer,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_operationIcon(OperationType.down), size: 16),
+                        const SizedBox(width: 4),
+                        Text(operationLabel(l10n, OperationType.down)),
+                      ],
+                    ),
+                  ),
+                  // Delete 按钮 — 错误色
+                  FilledButton.tonal(
+                    onPressed: () =>
+                        _confirmStackOperation(
+                          context,
+                          ref,
+                          detail.summary,
+                          OperationType.delete,
+                        ).then((changed) {
+                          if (changed) onRefresh();
+                        }),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: scheme.errorContainer,
+                      foregroundColor: scheme.onErrorContainer,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_operationIcon(OperationType.delete), size: 16),
+                        const SizedBox(width: 4),
+                        Text(operationLabel(l10n, OperationType.delete)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
+        // 服务区
         SectionHeader(
           title: l10n.services,
           trailing: TextButton.icon(
@@ -178,11 +264,14 @@ class _DetailContent extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         if (detail.services.isEmpty)
-          EmptyState(message: l10n.noServicesLoaded)
+          EmptyState(
+            message: l10n.noServicesLoaded,
+            icon: Icons.widgets_outlined,
+          )
         else
           ...detail.services.map(
             (service) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 10),
               child: _ServiceTile(
                 stack: detail.summary,
                 service: service,
@@ -268,40 +357,127 @@ class _ServiceTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = FeatureLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final statusColorVal = statusColor(context, service.status);
+    final session = ref.watch(dockgeSessionProvider);
+
     return DockgeCard(
-      child: Column(
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.view_in_ar_rounded),
-            title: Text(service.name),
-            subtitle: Text(
-              [service.image, ...service.ports].whereType<String>().join('\n'),
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            // 左侧状态色竖条
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: statusColorVal,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  bottomLeft: Radius.circular(16),
+                ),
+              ),
             ),
-            trailing: StatusPill(status: service.status),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.view_in_ar_rounded,
+                        size: 18,
+                        color: scheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          service.name,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // >_Bash 终端按钮
+                      IconButton(
+                        tooltip: '>_Bash',
+                        onPressed: session.connected
+                            ? () => context.push(
+                                '/stacks/${Uri.encodeComponent(stack.name)}'
+                                '/services/${Uri.encodeComponent(service.name)}'
+                                '/terminal',
+                              )
+                            : null,
+                        icon: Text(
+                          '>_',
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ),
+                      StatusPill(status: service.status),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // 服务详细信息
+                  _InfoRow(
+                    icon: Icons.image_rounded,
+                    text: service.image,
+                  ),
+                  if (service.ports.isNotEmpty)
+                    _InfoRow(
+                      icon: Icons.lan_rounded,
+                      text: service.ports.join(', '),
+                    ),
+                  if (service.cpuPercent != null)
+                    _InfoRow(
+                      icon: Icons.speed_rounded,
+                      text: 'CPU: ${service.cpuPercent}',
+                    ),
+                  if (service.memoryUsage != null)
+                    _InfoRow(
+                      icon: Icons.memory_rounded,
+                      text: 'Mem: ${service.memoryUsage}',
+                    ),
+                  if (actionsVisible)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () =>
+                                _serviceAction(context, ref, 'start'),
+                            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                            label: Text(l10n.start),
+                          ),
+                          TextButton.icon(
+                            onPressed: () =>
+                                _serviceAction(context, ref, 'stop'),
+                            icon: const Icon(Icons.stop_rounded, size: 18),
+                            label: Text(l10n.stop),
+                          ),
+                          TextButton.icon(
+                            onPressed: () =>
+                                _serviceAction(context, ref, 'restart'),
+                            icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                            label: Text(l10n.restart),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-          if (actionsVisible)
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton.icon(
-                  onPressed: () => _serviceAction(context, ref, 'start'),
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: Text(l10n.start),
-                ),
-                TextButton.icon(
-                  onPressed: () => _serviceAction(context, ref, 'stop'),
-                  icon: const Icon(Icons.stop_rounded),
-                  label: Text(l10n.stop),
-                ),
-                TextButton.icon(
-                  onPressed: () => _serviceAction(context, ref, 'restart'),
-                  icon: const Icon(Icons.restart_alt_rounded),
-                  label: Text(l10n.restart),
-                ),
-              ],
-            ),
         ],
+      ),
       ),
     );
   }
@@ -318,6 +494,38 @@ class _ServiceTile extends ConsumerWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.message ?? l10n.operationQueued)),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.icon, required this.text});
+
+  final IconData icon;
+  final String? text;
+
+  @override
+  Widget build(BuildContext context) {
+    if (text == null || text!.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

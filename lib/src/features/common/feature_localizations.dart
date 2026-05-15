@@ -31,7 +31,7 @@ class FeatureLocalizations {
   String get settings => _t('Settings', '设置');
   String get active => _t('Active', '运行中');
   String get exited => _t('Exited', '已退出');
-  String get inactive => _t('Inactive', '未激活');
+  String get inactive => _t('Inactive', '未启动');
   String get dockerRunConverter =>
       _t('Docker Run converter', 'Docker Run 转 Compose');
   String get dockerRunInput =>
@@ -46,7 +46,7 @@ class FeatureLocalizations {
   String get searchStacks => _t('Search stacks', '搜索 Stack');
   String get all => _t('All', '全部');
   String get running => _t('Running', '运行中');
-  String get stopped => _t('Stopped', '已停止');
+  String get stopped => _t('Exited', '已退出');
   String get partial => _t('Partial', '部分运行');
   String get error => _t('Error', '错误');
   String get updating => _t('Updating', '更新中');
@@ -91,6 +91,10 @@ class FeatureLocalizations {
       _t('Language takes effect immediately.', '语言设置会立即生效。');
   String get appearance => _t('Appearance', '外观');
   String get server => _t('Server', '服务器');
+  String get theme => _t('Theme', '主题');
+  String get themeSystem => _t('Auto', '跟随系统');
+  String get themeLight => _t('Light', '浅色');
+  String get themeDark => _t('Dark', '深色');
   String get profile => _t('Profile', '配置');
   String get version => _t('Version', '版本');
   String get disconnect => _t('Disconnect', '断开连接');

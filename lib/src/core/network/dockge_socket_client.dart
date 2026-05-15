@@ -333,17 +333,17 @@ class DockgeSocketClient {
     return _emitAgentVoid(endpoint, 'leaveCombinedTerminal', [stackName]);
   }
 
-  Future<ApiResult<void>> mainTerminal(
-    String endpoint, {
+  Future<ApiResult<void>> mainTerminal({
+    String endpoint = '',
     String terminalName = 'console',
   }) {
     return _emitAgentVoid(endpoint, 'mainTerminal', [terminalName]);
   }
 
-  Future<ApiResult<bool>> checkMainTerminal(String endpoint) {
-    return emitAgent(
-      endpoint,
+  Future<ApiResult<bool>> checkMainTerminal() {
+    return _emitAck<bool>(
       'checkMainTerminal',
+      null,
       decode: (value) => boolValue(jsonMap(value)['ok'] ?? value),
     );
   }
@@ -359,6 +359,15 @@ class DockgeSocketClient {
       serviceName,
       shell,
     ]);
+  }
+
+  /// 发送终端输入（通过 agent 通道）
+  Future<ApiResult<void>> terminalInputDirect({
+    required String endpoint,
+    required String input,
+    required String terminalName,
+  }) {
+    return _emitAgentVoid(endpoint, 'terminalInput', [terminalName, input]);
   }
 
   Future<ApiResult<void>> terminalInput(
@@ -440,10 +449,21 @@ class DockgeSocketClient {
     const eventNames = ['terminalWrite', 'terminalExit'];
     for (final eventName in eventNames) {
       socket.on(eventName, (payload) {
-        final map = jsonMap(payload);
-        _terminalController.add(
-          TerminalEvent.fromJson({'type': eventName, ...map}),
-        );
+        // 服务器可能以多参数发送: [terminalName, data]
+        if (payload is List && payload.length >= 2) {
+          _terminalController.add(
+            TerminalEvent.fromJson({
+              'type': eventName,
+              'terminalName': payload[0],
+              'data': payload[1],
+            }),
+          );
+        } else {
+          final map = jsonMap(payload);
+          _terminalController.add(
+            TerminalEvent.fromJson({'type': eventName, ...map}),
+          );
+        }
       });
     }
     socket.on('agent', (payload) {

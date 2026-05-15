@@ -45,7 +45,9 @@ class StackSummary {
       serviceCount: services is Map
           ? services.length
           : intValue(json['serviceCount'] ?? json['services']),
-      composePath: nullableString(json['composePath'] ?? json['path']),
+      composePath: nullableString(
+        json['composePath'] ?? json['path'] ?? json['composeFileName'],
+      ),
       endpoint: nullableString(json['endpoint']),
       isManagedByDockge: boolValue(json['isManagedByDockge'], fallback: true),
       updatedAt: dateTimeValue(json['updatedAt'] ?? json['lastUpdated']),
@@ -123,6 +125,9 @@ class ServiceStatus {
     required this.status,
     this.image,
     this.ports = const <String>[],
+    this.cpuPercent,
+    this.memoryUsage,
+    this.memoryPercent,
     this.raw = const <String, dynamic>{},
   });
 
@@ -130,6 +135,9 @@ class ServiceStatus {
   final StackStatus status;
   final String? image;
   final List<String> ports;
+  final String? cpuPercent;
+  final String? memoryUsage;
+  final String? memoryPercent;
   final Map<String, dynamic> raw;
 
   factory ServiceStatus.fromJson(Map<String, dynamic> json, {String? name}) {
@@ -138,6 +146,9 @@ class ServiceStatus {
       status: stackStatusFromDockge(json['status'] ?? json['state']),
       image: nullableString(json['image']),
       ports: jsonList(json['ports']).map((value) => value.toString()).toList(),
+      cpuPercent: nullableString(json['cpuPercent']),
+      memoryUsage: nullableString(json['memoryUsage']),
+      memoryPercent: nullableString(json['memoryPercent']),
       raw: json,
     );
   }
@@ -148,9 +159,12 @@ class DockerStats {
     required this.serviceName,
     this.containerName,
     this.cpuPercent = 0,
+    this.cpuPercentRaw,
     this.memoryUsageBytes = 0,
     this.memoryLimitBytes = 0,
     this.memoryPercent = 0,
+    this.memoryPercentRaw,
+    this.memoryUsageRaw,
     this.networkRxBytes = 0,
     this.networkTxBytes = 0,
     this.blockReadBytes = 0,
@@ -161,9 +175,12 @@ class DockerStats {
   final String serviceName;
   final String? containerName;
   final double cpuPercent;
+  final String? cpuPercentRaw;
   final int memoryUsageBytes;
   final int memoryLimitBytes;
   final double memoryPercent;
+  final String? memoryPercentRaw;
+  final String? memoryUsageRaw;
   final int networkRxBytes;
   final int networkTxBytes;
   final int blockReadBytes;
@@ -171,26 +188,39 @@ class DockerStats {
   final Map<String, dynamic> raw;
 
   factory DockerStats.fromJson(Map<String, dynamic> json, {String? name}) {
-    final memory = jsonMap(json['memory']);
-    final network = jsonMap(json['network']);
-    final block = jsonMap(json['block']);
     return DockerStats(
-      serviceName: stringValue(name ?? json['serviceName'] ?? json['name']),
-      containerName: nullableString(json['containerName'] ?? json['container']),
-      cpuPercent: doubleValue(json['cpuPercent'] ?? json['cpu']),
+      serviceName: stringValue(name ?? json['serviceName'] ?? json['Name']),
+      containerName: nullableString(
+        json['containerName'] ?? json['container'] ?? json['Name'],
+      ),
+      cpuPercent: _parsePercent(json['CPUPerc'] ?? json['cpuPercent'] ?? json['cpu']),
+      cpuPercentRaw: nullableString(json['CPUPerc'] ?? json['cpuPercentRaw']),
       memoryUsageBytes: intValue(
-        json['memoryUsageBytes'] ?? json['memUsage'] ?? memory['usage'],
+        json['memoryUsageBytes'] ?? json['memUsage'],
       ),
       memoryLimitBytes: intValue(
-        json['memoryLimitBytes'] ?? json['memLimit'] ?? memory['limit'],
+        json['memoryLimitBytes'] ?? json['memLimit'],
       ),
-      memoryPercent: doubleValue(json['memoryPercent'] ?? memory['percent']),
-      networkRxBytes: intValue(json['networkRxBytes'] ?? network['rx']),
-      networkTxBytes: intValue(json['networkTxBytes'] ?? network['tx']),
-      blockReadBytes: intValue(json['blockReadBytes'] ?? block['read']),
-      blockWriteBytes: intValue(json['blockWriteBytes'] ?? block['write']),
+      memoryPercent: _parsePercent(
+        json['MemPerc'] ?? json['memoryPercent'],
+      ),
+      memoryPercentRaw: nullableString(json['MemPerc'] ?? json['memoryPercentRaw']),
+      memoryUsageRaw: nullableString(json['MemUsage'] ?? json['memoryUsageRaw']),
+      networkRxBytes: intValue(json['networkRxBytes']),
+      networkTxBytes: intValue(json['networkTxBytes']),
+      blockReadBytes: intValue(json['blockReadBytes']),
+      blockWriteBytes: intValue(json['blockWriteBytes']),
       raw: json,
     );
+  }
+
+  /// 从百分比字符串如 "0.17%" 提取数值
+  static double _parsePercent(Object? value) {
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value.replaceAll('%', '').trim()) ?? 0;
+    }
+    return 0;
   }
 }
 
@@ -277,14 +307,21 @@ List<DockerStats> parseDockerStatsList(Object? payload) {
 
 List<ServiceStatus> _parseServices(Object? payload) {
   if (payload is Map) {
-    return payload.entries
-        .map(
-          (entry) => ServiceStatus.fromJson(
-            jsonMap(entry.value),
-            name: entry.key.toString(),
-          ),
-        )
-        .toList(growable: false);
+    return payload.entries.map((entry) {
+      final value = entry.value;
+      // 服务器返回 { "serviceName": [{ status, name }, ...] } 格式
+      // 每个服务对应一个容器数组，取第一个容器的状态作为服务状态
+      if (value is List && value.isNotEmpty) {
+        return ServiceStatus.fromJson(
+          jsonMap(value.first),
+          name: entry.key.toString(),
+        );
+      }
+      return ServiceStatus.fromJson(
+        jsonMap(value),
+        name: entry.key.toString(),
+      );
+    }).toList(growable: false);
   }
   return jsonList(payload)
       .map((value) => ServiceStatus.fromJson(jsonMap(value)))

@@ -5,6 +5,7 @@ import 'package:dockge_app/src/core/network/network.dart';
 import 'package:dockge_app/src/core/storage/storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:yaml/yaml.dart';
 
 final dockgeSessionProvider =
     NotifierProvider<DockgeSessionController, DockgeSessionState>(
@@ -192,6 +193,63 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
       stackName: stackName,
     );
 
+    // 解析 compose YAML 提取 image 和 ports（先做 envsubst 替换变量）
+    Map<String, Map<String, dynamic>> composeServices;
+    try {
+      final substituted = _envsubst(
+        stackResult.data!.composeYaml,
+        stackResult.data!.composeEnv,
+      );
+      composeServices = _parseComposeServices(substituted);
+    } catch (_) {
+      composeServices = {};
+    }
+
+    // 获取 docker stats（CPU、内存等），不阻塞主流程
+    Map<String, domain.DockerStats> statsMap;
+    try {
+      final statsResult = await client.dockerStats(resolvedEndpoint).timeout(
+        const Duration(seconds: 5),
+      );
+      statsMap = <String, domain.DockerStats>{};
+      if (statsResult.ok && statsResult.data != null) {
+        for (final stat in statsResult.data!) {
+          final key = stat.containerName ?? stat.serviceName;
+          statsMap[key] = stat;
+        }
+      }
+    } catch (_) {
+      statsMap = {};
+    }
+
+    // 合并 image/ports/dockerStats 到每个 ServiceStatus
+    List<domain.ServiceStatus> mergedServices;
+    try {
+      mergedServices =
+          (serviceResult.data ?? stackResult.data!.services).map((service) {
+            final compose = composeServices[service.name];
+            final containerStats = _findStatsForService(service, statsMap);
+            final composeImage = compose != null
+                ? (compose['image'] is String ? compose['image'] as String : null)
+                : null;
+            final composePorts = compose != null && compose['ports'] is List
+                ? (compose['ports'] as List).map((p) => p.toString()).toList()
+                : <String>[];
+            return domain.ServiceStatus(
+              name: service.name,
+              status: service.status,
+              image: service.image ?? composeImage,
+              ports: service.ports.isNotEmpty ? service.ports : composePorts,
+              cpuPercent: containerStats?.cpuPercentRaw,
+              memoryUsage: containerStats?.memoryUsageRaw,
+              memoryPercent: containerStats?.memoryPercentRaw,
+              raw: service.raw,
+            );
+          }).toList();
+    } catch (_) {
+      mergedServices = serviceResult.data ?? stackResult.data!.services;
+    }
+
     final liveSummary = matchedStacks.isEmpty ? null : matchedStacks.first;
     final detail = stackResult.data!;
     final mergedSummary = domain.StackSummary(
@@ -199,9 +257,9 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
       agentId: liveSummary?.agentId ?? detail.summary.agentId,
       status: liveSummary?.status ?? detail.summary.status,
       serviceCount:
-          serviceResult.data?.length ??
-          liveSummary?.serviceCount ??
-          detail.summary.serviceCount,
+          mergedServices.isNotEmpty
+              ? mergedServices.length
+              : liveSummary?.serviceCount ?? detail.summary.serviceCount,
       composePath: detail.summary.composePath ?? liveSummary?.composePath,
       endpoint: resolvedEndpoint.isEmpty
           ? (liveSummary?.endpoint ?? detail.summary.endpoint)
@@ -216,7 +274,7 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
         summary: mergedSummary,
         composeYaml: detail.composeYaml,
         composeEnv: detail.composeEnv,
-        services: serviceResult.data ?? detail.services,
+        services: mergedServices,
         envFiles: detail.envFiles,
         raw: detail.raw,
       ),
@@ -287,6 +345,76 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
       ),
       _ => domain.ApiResult.failure('Unsupported service action'),
     };
+  }
+
+  Future<domain.ApiResult<void>> joinServiceTerminal(
+    String stackName,
+    String serviceName,
+  ) async {
+    final client = _client;
+    if (client == null || !client.isConnected) {
+      return domain.ApiResult.failure('Not connected to Dockge');
+    }
+    final matchedStacks = state.stacks.where(
+      (stack) => stack.name == stackName,
+    );
+    final endpoint = matchedStacks.isEmpty ? '' : matchedStacks.first.endpoint ?? '';
+    // 先请求创建交互终端
+    final result = await client.interactiveTerminal(
+      endpoint,
+      stackName: stackName,
+      serviceName: serviceName,
+      shell: 'sh',
+    );
+    if (!result.ok) return result;
+    // 加入终端获取历史 buffer
+    final terminalName = _containerExecTerminalName(endpoint, stackName, serviceName);
+    return client.terminalJoin(endpoint, terminalName: terminalName);
+  }
+
+  Future<domain.ApiResult<void>> serviceTerminalInput(
+    String stackName,
+    String serviceName,
+    String input,
+  ) async {
+    final client = _client;
+    if (client == null || !client.isConnected) {
+      return domain.ApiResult.failure('Not connected to Dockge');
+    }
+    final matchedStacks = state.stacks.where(
+      (stack) => stack.name == stackName,
+    );
+    final endpoint = matchedStacks.isEmpty ? '' : matchedStacks.first.endpoint ?? '';
+    final terminalName = _containerExecTerminalName(endpoint, stackName, serviceName);
+    return client.terminalInputDirect(
+      endpoint: endpoint,
+      terminalName: terminalName,
+      input: input,
+    );
+  }
+
+  Future<domain.ApiResult<void>> joinMainTerminal() async {
+    final client = _client;
+    if (client == null || !client.isConnected) {
+      return domain.ApiResult.failure('Not connected to Dockge');
+    }
+    // 主终端通过 agent 通道
+    final result = await client.mainTerminal();
+    if (!result.ok) return result;
+    // 加入终端获取历史 buffer
+    return client.terminalJoin('', terminalName: 'console');
+  }
+
+  Future<domain.ApiResult<void>> mainTerminalInput(String input) async {
+    final client = _client;
+    if (client == null || !client.isConnected) {
+      return domain.ApiResult.failure('Not connected to Dockge');
+    }
+    return client.terminalInputDirect(
+      endpoint: '',
+      terminalName: 'console',
+      input: input,
+    );
   }
 
   Future<domain.ApiResult<void>> joinCombinedTerminal(
@@ -486,5 +614,104 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     return endpoint.isEmpty
         ? 'combined-${stack.name}'
         : 'combined-$endpoint-${stack.name}';
+  }
+
+  /// 容器交互终端名称，格式: container-exec-{endpoint}-{stackName}-{serviceName}-0
+  /// 与 Dockge 服务器端 getContainerExecTerminalName() 一致
+  String _containerExecTerminalName(
+    String endpoint,
+    String stackName,
+    String serviceName, [
+    int index = 0,
+  ]) {
+    return 'container-exec-$endpoint-$stackName-$serviceName-$index';
+  }
+
+  /// 从 compose YAML 解析 services 下的 image 和 ports
+  Map<String, Map<String, dynamic>> _parseComposeServices(String yamlText) {
+    try {
+      if (yamlText.isEmpty) return {};
+      final doc = loadYaml(yamlText);
+      if (doc is! Map) return {};
+      final services = doc['services'];
+      if (services is! Map) return {};
+      final result = <String, Map<String, dynamic>>{};
+      for (final entry in services.entries) {
+        final key = entry.key.toString();
+        final value = entry.value;
+        if (value is! Map) {
+          result[key] = {};
+          continue;
+        }
+        result[key] = {
+          'image': value['image']?.toString(),
+          'ports': value['ports'] is List
+              ? value['ports'].map((p) => p.toString()).toList().cast<String>()
+              : <String>[],
+        };
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// 解析 .env 文件内容为 key-value 映射
+  Map<String, String> _parseEnvFile(String envText) {
+    final vars = <String, String>{};
+    for (final line in envText.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+      final eq = trimmed.indexOf('=');
+      if (eq < 1) continue;
+      final key = trimmed.substring(0, eq).trim();
+      var val = trimmed.substring(eq + 1).trim();
+      // 去掉引号
+      if ((val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.substring(1, val.length - 1);
+      }
+      vars[key] = val;
+    }
+    return vars;
+  }
+
+  /// 简易 envsubst：用 .env 变量替换 compose YAML 中的 ${VAR} 和 ${VAR:-default}
+  String _envsubst(String yamlText, String envText) {
+    if (yamlText.isEmpty) return yamlText;
+    final vars = _parseEnvFile(envText);
+    // 匹配 ${VAR:-default} 和 ${VAR}
+    final pattern = RegExp(r'\$\{([^}]+)\}');
+    return yamlText.replaceAllMapped(pattern, (match) {
+      final expr = match.group(1)!;
+      // ${VAR:-default} 格式
+      final defaultIndex = expr.indexOf(':-');
+      if (defaultIndex > 0) {
+        final varName = expr.substring(0, defaultIndex).trim();
+        final defaultVal = expr.substring(defaultIndex + 2);
+        return vars[varName] ?? defaultVal;
+      }
+      // ${VAR} 格式
+      return vars[expr.trim()] ?? match.group(0)!;
+    });
+  }
+
+  /// 在 dockerStats map 中查找与 service 关联的容器统计
+  domain.DockerStats? _findStatsForService(
+    domain.ServiceStatus service,
+    Map<String, domain.DockerStats> statsMap,
+  ) {
+    // raw 中存有容器名（来自 serviceStatusList 的 name 字段）
+    final containerName = service.raw['name']?.toString();
+    if (containerName != null && statsMap.containsKey(containerName)) {
+      return statsMap[containerName];
+    }
+    // 回退：用服务名模糊匹配容器名
+    for (final entry in statsMap.entries) {
+      if (entry.key.contains(service.name)) {
+        return entry.value;
+      }
+    }
+    return null;
   }
 }

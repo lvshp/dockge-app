@@ -3,26 +3,18 @@ import 'package:dockge_app/src/features/common/feature_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class LogsPage extends ConsumerStatefulWidget {
-  const LogsPage({required this.stackName, super.key});
-
-  final String stackName;
+class MainTerminalPage extends ConsumerStatefulWidget {
+  const MainTerminalPage({super.key});
 
   @override
-  ConsumerState<LogsPage> createState() => _LogsPageState();
+  ConsumerState<MainTerminalPage> createState() => _MainTerminalPageState();
 }
 
-class _LogsPageState extends ConsumerState<LogsPage> {
+class _MainTerminalPageState extends ConsumerState<MainTerminalPage> {
   final _commandController = TextEditingController();
   final _lines = <String>[];
   bool _follow = true;
-  String? _activeTerminalName;
-
-  String _combinedTerminalName(String endpoint) {
-    return endpoint.isEmpty
-        ? 'combined-${widget.stackName}'
-        : 'combined-$endpoint-${widget.stackName}';
-  }
+  static const _terminalName = 'console';
 
   @override
   void initState() {
@@ -44,18 +36,13 @@ class _LogsPageState extends ConsumerState<LogsPage> {
     ref.listen(terminalEventsProvider, (_, next) {
       final event = next.whenOrNull(data: (event) => event);
       if (event == null || event.data.isEmpty) return;
-      // 只接受当前组合终端的事件
-      if (_activeTerminalName != null &&
-          event.terminalName != null &&
-          event.terminalName != _activeTerminalName) {
+      // 只接受当前终端的事件
+      if (event.terminalName != null && event.terminalName != _terminalName) {
         return;
       }
-      if (mounted) {
-        setState(() => _lines.add(event.data));
-      }
+      if (mounted) setState(() => _lines.add(event.data));
     });
 
-    // 终端背景色：暗色模式深黑，亮色模式深灰
     final terminalBg = scheme.brightness == Brightness.dark
         ? const Color(0xFF1A1B1E)
         : const Color(0xFF2B2D31);
@@ -65,7 +52,7 @@ class _LogsPageState extends ConsumerState<LogsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.logs),
+        title: Text(l10n.terminal),
         actions: [
           IconButton(
             tooltip: l10n.reconnect,
@@ -83,16 +70,12 @@ class _LogsPageState extends ConsumerState<LogsPage> {
             color: scheme.surfaceContainerLow,
             child: Row(
               children: [
-                Icon(
-                  Icons.terminal_rounded,
-                  size: 16,
-                  color: scheme.primary,
-                ),
+                Icon(Icons.computer_rounded, size: 16, color: scheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     session.connected
-                        ? l10n.terminalFor(widget.stackName)
+                        ? _t(l10n, 'Host Terminal', '宿主机终端')
                         : l10n.connectToServerFirst,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
@@ -183,35 +166,26 @@ class _LogsPageState extends ConsumerState<LogsPage> {
   }
 
   Future<void> _joinTerminal() async {
-    final stack = _stack();
-    if (stack == null) return;
     _lines.clear();
-    _activeTerminalName = _combinedTerminalName(stack.endpoint ?? '');
     final result = await ref
         .read(dockgeSessionProvider.notifier)
-        .joinCombinedTerminal(stack);
+        .joinMainTerminal();
     if (!mounted || result.ok) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(result.message ?? 'Terminal error')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message ?? 'Terminal error')),
+    );
   }
 
   Future<void> _send() async {
     final command = _commandController.text;
     if (command.isEmpty) return;
     _commandController.clear();
-    final stack = _stack();
-    if (stack == null) return;
     await ref
         .read(dockgeSessionProvider.notifier)
-        .terminalInput(stack, command);
+        .mainTerminalInput(command);
   }
 
-  dynamic _stack() {
-    final session = ref.read(dockgeSessionProvider);
-    final matches = session.stacks.where(
-      (stack) => stack.name == widget.stackName,
-    );
-    return matches.isEmpty ? null : matches.first;
+  String _t(FeatureLocalizations l10n, String en, String zh) {
+    return l10n.active == 'Active' ? en : zh;
   }
 }

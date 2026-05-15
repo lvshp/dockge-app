@@ -5,6 +5,8 @@ import 'package:dockge_app/src/features/dashboard/dashboard_page.dart';
 import 'package:dockge_app/src/features/settings/settings_page.dart';
 import 'package:dockge_app/src/features/stacks/compose_editor_page.dart';
 import 'package:dockge_app/src/features/stacks/logs_page.dart';
+import 'package:dockge_app/src/features/terminal/main_terminal_page.dart';
+import 'package:dockge_app/src/features/terminal/service_terminal_page.dart';
 import 'package:dockge_app/src/features/stacks/stack_detail_page.dart';
 import 'package:dockge_app/src/features/stacks/stacks_page.dart';
 import 'package:flutter/widgets.dart';
@@ -94,6 +96,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return LogsPage(stackName: name);
         },
       ),
+      GoRoute(
+        path: '/terminal',
+        name: AppRoute.mainTerminal.name,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const MainTerminalPage(),
+      ),
+      GoRoute(
+        path: '/stacks/:name/services/:service/terminal',
+        name: AppRoute.serviceTerminal.name,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) {
+          final name = Uri.decodeComponent(state.pathParameters['name'] ?? '');
+          final service = Uri.decodeComponent(state.pathParameters['service'] ?? '');
+          return ServiceTerminalPage(stackName: name, serviceName: service);
+        },
+      ),
     ],
   );
 });
@@ -107,4 +125,6 @@ enum AppRoute {
   stackDetail,
   stackCompose,
   stackLogs,
+  mainTerminal,
+  serviceTerminal,
 }

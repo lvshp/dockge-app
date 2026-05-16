@@ -118,6 +118,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           decoration: InputDecoration(
                             labelText: l10n.serverUrl,
                             prefixIcon: const Icon(Icons.link_rounded),
+                            hintText: 'https://dockge.example.com:8443',
                           ),
                           keyboardType: TextInputType.url,
                           validator: (value) => _required(context, value),
@@ -128,7 +129,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(16),
                             color: colorScheme.surfaceContainerLowest,
-                            border: Border.all(color: colorScheme.outlineVariant),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant,
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -136,7 +139,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 child: _AuthTypeButton(
                                   icon: Icons.lock_outline,
                                   label: l10n.passwordAuth,
-                                  selected: _authType == domain.AuthType.password,
+                                  selected:
+                                      _authType == domain.AuthType.password,
                                   onTap: () => setState(
                                     () => _authType = domain.AuthType.password,
                                   ),

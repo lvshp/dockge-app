@@ -180,17 +180,29 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
         endpoint ??
         (matchedStacks.isEmpty ? null : matchedStacks.first.endpoint) ??
         '';
-    final stackResult = await client.getStack(
-      resolvedEndpoint,
-      stackName: stackName,
+    final stackResult = await _safeStackRequest(
+      () => client.getStack(resolvedEndpoint, stackName: stackName),
+      fallbackMessage: 'Loading stack details timed out',
+      timeout: const Duration(seconds: 8),
     );
     if (!stackResult.ok || stackResult.data == null) {
       return stackResult;
     }
 
-    final serviceResult = await client.serviceStatusList(
-      resolvedEndpoint,
-      stackName: stackName,
+    final serviceFuture = _safeStackRequest(
+      () => client.serviceStatusList(resolvedEndpoint, stackName: stackName),
+      fallbackMessage: 'Loading service status timed out',
+      timeout: const Duration(seconds: 5),
+      emptyOnTimeout: true,
+      emptyValue: const <domain.ServiceStatus>[],
+    );
+
+    final statsFuture = _safeStackRequest(
+      () => client.dockerStats(resolvedEndpoint),
+      fallbackMessage: 'Loading docker stats timed out',
+      timeout: const Duration(seconds: 5),
+      emptyOnTimeout: true,
+      emptyValue: const <domain.DockerStats>[],
     );
 
     // 解析 compose YAML 提取 image 和 ports（先做 envsubst 替换变量）
@@ -207,19 +219,17 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
 
     // 获取 docker stats（CPU、内存等），不阻塞主流程
     Map<String, domain.DockerStats> statsMap;
-    try {
-      final statsResult = await client
-          .dockerStats(resolvedEndpoint)
-          .timeout(const Duration(seconds: 5));
-      statsMap = <String, domain.DockerStats>{};
-      if (statsResult.ok && statsResult.data != null) {
-        for (final stat in statsResult.data!) {
-          final key = stat.containerName ?? stat.serviceName;
-          statsMap[key] = stat;
-        }
+    final results = await Future.wait([serviceFuture, statsFuture]);
+    final serviceResult =
+        results[0] as domain.ApiResult<List<domain.ServiceStatus>>;
+    final statsResult =
+        results[1] as domain.ApiResult<List<domain.DockerStats>>;
+    statsMap = <String, domain.DockerStats>{};
+    if (statsResult.ok && statsResult.data != null) {
+      for (final stat in statsResult.data!) {
+        final key = stat.containerName ?? stat.serviceName;
+        statsMap[key] = stat;
       }
-    } catch (_) {
-      statsMap = {};
     }
 
     // 合并 image/ports/dockerStats 到每个 ServiceStatus
@@ -281,6 +291,28 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
       raw: stackResult.raw,
       message: stackResult.message,
     );
+  }
+
+  Future<domain.ApiResult<T>> _safeStackRequest<T>(
+    Future<domain.ApiResult<T>> Function() task, {
+    required String fallbackMessage,
+    required Duration timeout,
+    bool emptyOnTimeout = false,
+    T? emptyValue,
+  }) async {
+    try {
+      return await task().timeout(timeout);
+    } on TimeoutException {
+      if (emptyOnTimeout && emptyValue != null) {
+        return domain.ApiResult.success(emptyValue, message: fallbackMessage);
+      }
+      return domain.ApiResult.failure(fallbackMessage);
+    } catch (error) {
+      if (emptyOnTimeout && emptyValue != null) {
+        return domain.ApiResult.success(emptyValue, message: error.toString());
+      }
+      return domain.ApiResult.failure(error.toString());
+    }
   }
 
   Future<domain.ApiResult<void>> saveStack(
@@ -637,7 +669,7 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     required DateTime timestamp,
   }) {
     final trimmedName = name.trim();
-    final trimmedUrl = baseUrl.trim();
+    final trimmedUrl = _normalizeBaseUrl(baseUrl);
     final existingProfile = state.profile;
     return domain.ServerProfile(
       id: existingProfile?.baseUrl == trimmedUrl
@@ -653,6 +685,21 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
           : timestamp,
       updatedAt: timestamp,
     );
+  }
+
+  String _normalizeBaseUrl(String baseUrl) {
+    final trimmed = baseUrl.trim();
+    if (trimmed.isEmpty) {
+      return trimmed;
+    }
+
+    final withScheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://').hasMatch(trimmed)
+        ? trimmed
+        : 'https://$trimmed';
+
+    return withScheme.endsWith('/')
+        ? withScheme.substring(0, withScheme.length - 1)
+        : withScheme;
   }
 
   String? _resolvePersistedToken({

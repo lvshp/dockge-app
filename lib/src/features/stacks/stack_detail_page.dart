@@ -69,6 +69,12 @@ class _StackDetailPageState extends ConsumerState<StackDetailPage> {
               icon: Icons.cloud_off_rounded,
             );
           }
+          if (snapshot.hasError) {
+            return EmptyState(
+              message: snapshot.error.toString(),
+              icon: Icons.error_outline_rounded,
+            );
+          }
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }

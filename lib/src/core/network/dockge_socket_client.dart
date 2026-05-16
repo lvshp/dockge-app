@@ -319,11 +319,19 @@ class DockgeSocketClient {
     );
   }
 
-  Future<ApiResult<void>> terminalJoin(
+  Future<ApiResult<String>> terminalJoin(
     String endpoint, {
     required String terminalName,
   }) {
-    return _emitAgentVoid(endpoint, 'terminalJoin', [terminalName]);
+    return emitAgent(
+      endpoint,
+      'terminalJoin',
+      payload: [terminalName],
+      decode: (value) {
+        final map = jsonMap(value);
+        return stringValue(map['buffer'] ?? value);
+      },
+    );
   }
 
   Future<ApiResult<void>> leaveCombinedTerminal(

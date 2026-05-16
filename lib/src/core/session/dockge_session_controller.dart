@@ -208,9 +208,9 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     // 获取 docker stats（CPU、内存等），不阻塞主流程
     Map<String, domain.DockerStats> statsMap;
     try {
-      final statsResult = await client.dockerStats(resolvedEndpoint).timeout(
-        const Duration(seconds: 5),
-      );
+      final statsResult = await client
+          .dockerStats(resolvedEndpoint)
+          .timeout(const Duration(seconds: 5));
       statsMap = <String, domain.DockerStats>{};
       if (statsResult.ok && statsResult.data != null) {
         for (final stat in statsResult.data!) {
@@ -225,27 +225,28 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     // 合并 image/ports/dockerStats 到每个 ServiceStatus
     List<domain.ServiceStatus> mergedServices;
     try {
-      mergedServices =
-          (serviceResult.data ?? stackResult.data!.services).map((service) {
-            final compose = composeServices[service.name];
-            final containerStats = _findStatsForService(service, statsMap);
-            final composeImage = compose != null
-                ? (compose['image'] is String ? compose['image'] as String : null)
-                : null;
-            final composePorts = compose != null && compose['ports'] is List
-                ? (compose['ports'] as List).map((p) => p.toString()).toList()
-                : <String>[];
-            return domain.ServiceStatus(
-              name: service.name,
-              status: service.status,
-              image: service.image ?? composeImage,
-              ports: service.ports.isNotEmpty ? service.ports : composePorts,
-              cpuPercent: containerStats?.cpuPercentRaw,
-              memoryUsage: containerStats?.memoryUsageRaw,
-              memoryPercent: containerStats?.memoryPercentRaw,
-              raw: service.raw,
-            );
-          }).toList();
+      mergedServices = (serviceResult.data ?? stackResult.data!.services).map((
+        service,
+      ) {
+        final compose = composeServices[service.name];
+        final containerStats = _findStatsForService(service, statsMap);
+        final composeImage = compose != null
+            ? (compose['image'] is String ? compose['image'] as String : null)
+            : null;
+        final composePorts = compose != null && compose['ports'] is List
+            ? (compose['ports'] as List).map((p) => p.toString()).toList()
+            : <String>[];
+        return domain.ServiceStatus(
+          name: service.name,
+          status: service.status,
+          image: service.image ?? composeImage,
+          ports: service.ports.isNotEmpty ? service.ports : composePorts,
+          cpuPercent: containerStats?.cpuPercentRaw,
+          memoryUsage: containerStats?.memoryUsageRaw,
+          memoryPercent: containerStats?.memoryPercentRaw,
+          raw: service.raw,
+        );
+      }).toList();
     } catch (_) {
       mergedServices = serviceResult.data ?? stackResult.data!.services;
     }
@@ -256,10 +257,9 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
       name: detail.summary.name,
       agentId: liveSummary?.agentId ?? detail.summary.agentId,
       status: liveSummary?.status ?? detail.summary.status,
-      serviceCount:
-          mergedServices.isNotEmpty
-              ? mergedServices.length
-              : liveSummary?.serviceCount ?? detail.summary.serviceCount,
+      serviceCount: mergedServices.isNotEmpty
+          ? mergedServices.length
+          : liveSummary?.serviceCount ?? detail.summary.serviceCount,
       composePath: detail.summary.composePath ?? liveSummary?.composePath,
       endpoint: resolvedEndpoint.isEmpty
           ? (liveSummary?.endpoint ?? detail.summary.endpoint)
@@ -347,7 +347,7 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     };
   }
 
-  Future<domain.ApiResult<void>> joinServiceTerminal(
+  Future<domain.ApiResult<String>> joinServiceTerminal(
     String stackName,
     String serviceName,
   ) async {
@@ -358,7 +358,9 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     final matchedStacks = state.stacks.where(
       (stack) => stack.name == stackName,
     );
-    final endpoint = matchedStacks.isEmpty ? '' : matchedStacks.first.endpoint ?? '';
+    final endpoint = matchedStacks.isEmpty
+        ? ''
+        : matchedStacks.first.endpoint ?? '';
     // 先请求创建交互终端
     final result = await client.interactiveTerminal(
       endpoint,
@@ -366,9 +368,19 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
       serviceName: serviceName,
       shell: 'sh',
     );
-    if (!result.ok) return result;
+    if (!result.ok) {
+      return domain.ApiResult.failure(
+        result.message ?? 'Failed to create interactive terminal',
+        code: result.code,
+        raw: result.raw,
+      );
+    }
     // 加入终端获取历史 buffer
-    final terminalName = _containerExecTerminalName(endpoint, stackName, serviceName);
+    final terminalName = _containerExecTerminalName(
+      endpoint,
+      stackName,
+      serviceName,
+    );
     return client.terminalJoin(endpoint, terminalName: terminalName);
   }
 
@@ -384,8 +396,14 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     final matchedStacks = state.stacks.where(
       (stack) => stack.name == stackName,
     );
-    final endpoint = matchedStacks.isEmpty ? '' : matchedStacks.first.endpoint ?? '';
-    final terminalName = _containerExecTerminalName(endpoint, stackName, serviceName);
+    final endpoint = matchedStacks.isEmpty
+        ? ''
+        : matchedStacks.first.endpoint ?? '';
+    final terminalName = _containerExecTerminalName(
+      endpoint,
+      stackName,
+      serviceName,
+    );
     return client.terminalInputDirect(
       endpoint: endpoint,
       terminalName: terminalName,
@@ -393,14 +411,49 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     );
   }
 
-  Future<domain.ApiResult<void>> joinMainTerminal() async {
+  Future<domain.ApiResult<void>> serviceTerminalResize(
+    String stackName,
+    String serviceName, {
+    required int rows,
+    required int cols,
+  }) async {
+    final client = _client;
+    if (client == null || !client.isConnected) {
+      return domain.ApiResult.failure('Not connected to Dockge');
+    }
+    final matchedStacks = state.stacks.where(
+      (stack) => stack.name == stackName,
+    );
+    final endpoint = matchedStacks.isEmpty
+        ? ''
+        : matchedStacks.first.endpoint ?? '';
+    final terminalName = _containerExecTerminalName(
+      endpoint,
+      stackName,
+      serviceName,
+    );
+    return client.terminalResize(
+      endpoint,
+      terminalName: terminalName,
+      rows: rows,
+      cols: cols,
+    );
+  }
+
+  Future<domain.ApiResult<String>> joinMainTerminal() async {
     final client = _client;
     if (client == null || !client.isConnected) {
       return domain.ApiResult.failure('Not connected to Dockge');
     }
     // 主终端通过 agent 通道
     final result = await client.mainTerminal();
-    if (!result.ok) return result;
+    if (!result.ok) {
+      return domain.ApiResult.failure(
+        result.message ?? 'Failed to create main terminal',
+        code: result.code,
+        raw: result.raw,
+      );
+    }
     // 加入终端获取历史 buffer
     return client.terminalJoin('', terminalName: 'console');
   }
@@ -417,7 +470,23 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     );
   }
 
-  Future<domain.ApiResult<void>> joinCombinedTerminal(
+  Future<domain.ApiResult<void>> mainTerminalResize({
+    required int rows,
+    required int cols,
+  }) async {
+    final client = _client;
+    if (client == null || !client.isConnected) {
+      return domain.ApiResult.failure('Not connected to Dockge');
+    }
+    return client.terminalResize(
+      '',
+      terminalName: 'console',
+      rows: rows,
+      cols: cols,
+    );
+  }
+
+  Future<domain.ApiResult<String>> joinCombinedTerminal(
     domain.StackSummary stack,
   ) async {
     final client = _client;
@@ -444,6 +513,24 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
       stack.endpoint ?? '',
       terminalName: terminalName,
       input: input,
+    );
+  }
+
+  Future<domain.ApiResult<void>> terminalResize(
+    domain.StackSummary stack, {
+    required int rows,
+    required int cols,
+  }) async {
+    final client = _client;
+    if (client == null || !client.isConnected) {
+      return domain.ApiResult.failure('Not connected to Dockge');
+    }
+    final terminalName = _combinedTerminalName(stack);
+    return client.terminalResize(
+      stack.endpoint ?? '',
+      terminalName: terminalName,
+      rows: rows,
+      cols: cols,
     );
   }
 
@@ -578,14 +665,19 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
     if (loginData == null) {
       return null;
     }
-    return domain.nullableString(loginData['token'] ?? loginData['accessToken']);
+    return domain.nullableString(
+      loginData['token'] ?? loginData['accessToken'],
+    );
   }
 
   DockgeProfileStorage _storage() {
     return DockgeProfileStorage(DockgeSecureStorage());
   }
 
-  Future<void> _saveProfile(domain.ServerProfile profile, {String? token}) async {
+  Future<void> _saveProfile(
+    domain.ServerProfile profile, {
+    String? token,
+  }) async {
     try {
       await _storage().save(profile, token: token);
     } catch (_) {
@@ -611,9 +703,7 @@ class DockgeSessionController extends Notifier<DockgeSessionState> {
 
   String _combinedTerminalName(domain.StackSummary stack) {
     final endpoint = stack.endpoint ?? '';
-    return endpoint.isEmpty
-        ? 'combined-${stack.name}'
-        : 'combined-$endpoint-${stack.name}';
+    return 'combined-$endpoint-${stack.name}';
   }
 
   /// 容器交互终端名称，格式: container-exec-{endpoint}-{stackName}-{serviceName}-0

@@ -89,15 +89,6 @@ class _StackDetailPageState extends ConsumerState<StackDetailPage> {
           );
         },
       ),
-      floatingActionButton: session.connected
-          ? FloatingActionButton.extended(
-              onPressed: () => context.push(
-                '/stacks/${Uri.encodeComponent(widget.stackName)}/logs',
-              ),
-              icon: const Icon(Icons.terminal_rounded),
-              label: Text(l10n.terminal),
-            )
-          : null,
     );
   }
 }
@@ -381,103 +372,105 @@ class _ServiceTile extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.view_in_ar_rounded,
-                        size: 18,
-                        color: scheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          service.name,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.view_in_ar_rounded,
+                          size: 18,
+                          color: scheme.primary,
                         ),
-                      ),
-                      // >_Bash 终端按钮
-                      IconButton(
-                        tooltip: '>_Bash',
-                        onPressed: session.connected
-                            ? () => context.push(
-                                '/stacks/${Uri.encodeComponent(stack.name)}'
-                                '/services/${Uri.encodeComponent(service.name)}'
-                                '/terminal',
-                              )
-                            : null,
-                        icon: Text(
-                          '>_',
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: scheme.primary,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            service.name,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        // >_Bash 终端按钮
+                        IconButton(
+                          tooltip: '>_Bash',
+                          onPressed: session.connected
+                              ? () => context.push(
+                                  '/stacks/${Uri.encodeComponent(stack.name)}'
+                                  '/services/${Uri.encodeComponent(service.name)}'
+                                  '/terminal',
+                                )
+                              : null,
+                          icon: Text(
+                            '>_',
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.primary,
+                            ),
+                          ),
+                        ),
+                        StatusPill(status: service.status),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // 服务详细信息
+                    _InfoRow(icon: Icons.image_rounded, text: service.image),
+                    if (service.ports.isNotEmpty)
+                      _InfoRow(
+                        icon: Icons.lan_rounded,
+                        text: service.ports.join(', '),
                       ),
-                      StatusPill(status: service.status),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // 服务详细信息
-                  _InfoRow(
-                    icon: Icons.image_rounded,
-                    text: service.image,
-                  ),
-                  if (service.ports.isNotEmpty)
-                    _InfoRow(
-                      icon: Icons.lan_rounded,
-                      text: service.ports.join(', '),
-                    ),
-                  if (service.cpuPercent != null)
-                    _InfoRow(
-                      icon: Icons.speed_rounded,
-                      text: 'CPU: ${service.cpuPercent}',
-                    ),
-                  if (service.memoryUsage != null)
-                    _InfoRow(
-                      icon: Icons.memory_rounded,
-                      text: 'Mem: ${service.memoryUsage}',
-                    ),
-                  if (actionsVisible)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Wrap(
-                        spacing: 8,
-                        children: [
-                          TextButton.icon(
-                            onPressed: () =>
-                                _serviceAction(context, ref, 'start'),
-                            icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                            label: Text(l10n.start),
-                          ),
-                          TextButton.icon(
-                            onPressed: () =>
-                                _serviceAction(context, ref, 'stop'),
-                            icon: const Icon(Icons.stop_rounded, size: 18),
-                            label: Text(l10n.stop),
-                          ),
-                          TextButton.icon(
-                            onPressed: () =>
-                                _serviceAction(context, ref, 'restart'),
-                            icon: const Icon(Icons.restart_alt_rounded, size: 18),
-                            label: Text(l10n.restart),
-                          ),
-                        ],
+                    if (service.cpuPercent != null)
+                      _InfoRow(
+                        icon: Icons.speed_rounded,
+                        text: 'CPU: ${service.cpuPercent}',
                       ),
-                    ),
-                ],
+                    if (service.memoryUsage != null)
+                      _InfoRow(
+                        icon: Icons.memory_rounded,
+                        text: 'Mem: ${service.memoryUsage}',
+                      ),
+                    if (actionsVisible)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Wrap(
+                          spacing: 8,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () =>
+                                  _serviceAction(context, ref, 'start'),
+                              icon: const Icon(
+                                Icons.play_arrow_rounded,
+                                size: 18,
+                              ),
+                              label: Text(l10n.start),
+                            ),
+                            TextButton.icon(
+                              onPressed: () =>
+                                  _serviceAction(context, ref, 'stop'),
+                              icon: const Icon(Icons.stop_rounded, size: 18),
+                              label: Text(l10n.stop),
+                            ),
+                            TextButton.icon(
+                              onPressed: () =>
+                                  _serviceAction(context, ref, 'restart'),
+                              icon: const Icon(
+                                Icons.restart_alt_rounded,
+                                size: 18,
+                              ),
+                              label: Text(l10n.restart),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -517,9 +510,9 @@ class _InfoRow extends StatelessWidget {
           Expanded(
             child: Text(
               text!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),

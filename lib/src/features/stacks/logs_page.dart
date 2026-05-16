@@ -2,6 +2,7 @@ import 'package:dockge_app/src/core/session/session.dart';
 import 'package:dockge_app/src/features/common/feature_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xterm/xterm.dart';
 
 class LogsPage extends ConsumerStatefulWidget {
   const LogsPage({required this.stackName, super.key});
@@ -13,26 +14,32 @@ class LogsPage extends ConsumerStatefulWidget {
 }
 
 class _LogsPageState extends ConsumerState<LogsPage> {
-  final _commandController = TextEditingController();
-  final _lines = <String>[];
-  bool _follow = true;
+  late final Terminal _terminal;
+  late final TerminalController _terminalController;
   String? _activeTerminalName;
 
   String _combinedTerminalName(String endpoint) {
-    return endpoint.isEmpty
-        ? 'combined-${widget.stackName}'
-        : 'combined-$endpoint-${widget.stackName}';
+    return 'combined-$endpoint-${widget.stackName}';
   }
 
   @override
   void initState() {
     super.initState();
+    _terminal = Terminal(maxLines: 10000);
+    _terminalController = TerminalController();
+    _terminal.onResize = (cols, rows, pixelWidth, pixelHeight) {
+      final stack = _stack();
+      if (stack == null) return;
+      ref
+          .read(dockgeSessionProvider.notifier)
+          .terminalResize(stack, rows: rows, cols: cols);
+    };
     WidgetsBinding.instance.addPostFrameCallback((_) => _joinTerminal());
   }
 
   @override
   void dispose() {
-    _commandController.dispose();
+    _terminalController.dispose();
     super.dispose();
   }
 
@@ -51,7 +58,7 @@ class _LogsPageState extends ConsumerState<LogsPage> {
         return;
       }
       if (mounted) {
-        setState(() => _lines.add(event.data));
+        _terminal.write(event.data);
       }
     });
 
@@ -59,10 +66,6 @@ class _LogsPageState extends ConsumerState<LogsPage> {
     final terminalBg = scheme.brightness == Brightness.dark
         ? const Color(0xFF1A1B1E)
         : const Color(0xFF2B2D31);
-    final terminalFg = scheme.brightness == Brightness.dark
-        ? const Color(0xFFA9D4A0)
-        : const Color(0xFF4EC9B0);
-
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.logs),
@@ -83,27 +86,17 @@ class _LogsPageState extends ConsumerState<LogsPage> {
             color: scheme.surfaceContainerLow,
             child: Row(
               children: [
-                Icon(
-                  Icons.terminal_rounded,
-                  size: 16,
-                  color: scheme.primary,
-                ),
+                Icon(Icons.terminal_rounded, size: 16, color: scheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     session.connected
-                        ? l10n.terminalFor(widget.stackName)
+                        ? widget.stackName
                         : l10n.connectToServerFirst,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
-                FilterChip(
-                  selected: _follow,
-                  label: Text(l10n.follow),
-                  avatar: const Icon(Icons.vertical_align_bottom_rounded, size: 16),
-                  onSelected: (value) => setState(() => _follow = value),
                 ),
               ],
             ),
@@ -117,63 +110,20 @@ class _LogsPageState extends ConsumerState<LogsPage> {
                 color: terminalBg,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: _lines.isEmpty
-                  ? Center(
-                      child: Text(
-                        session.connected
-                            ? l10n.waitingForTerminalOutput
-                            : l10n.connectToServerFirst,
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontFamily: 'monospace',
-                          fontSize: 13,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      reverse: _follow,
-                      itemCount: _lines.length,
-                      itemBuilder: (context, index) {
-                        final line = _follow
-                            ? _lines[_lines.length - index - 1]
-                            : _lines[index];
-                        return SelectableText(
-                          line,
-                          style: TextStyle(
-                            color: terminalFg,
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                            height: 1.5,
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ),
-          // 命令输入区
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _commandController,
-                      decoration: InputDecoration(
-                        labelText: l10n.commandInput,
-                        prefixIcon: const Icon(Icons.chevron_right_rounded),
-                      ),
-                      style: const TextStyle(fontFamily: 'monospace'),
-                      onSubmitted: (_) => _send(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    tooltip: l10n.send,
-                    onPressed: session.connected ? _send : null,
-                    icon: const Icon(Icons.send_rounded),
-                  ),
-                ],
+              child: TerminalView(
+                _terminal,
+                controller: _terminalController,
+                autofocus: true,
+                backgroundOpacity: 0,
+                padding: const EdgeInsets.all(2),
+                textStyle: const TerminalStyle(
+                  fontSize: 13,
+                  height: 1.25,
+                  fontFamily: 'monospace',
+                ),
+                keyboardType: TextInputType.text,
+                deleteDetection: true,
+                readOnly: true,
               ),
             ),
           ),
@@ -185,26 +135,22 @@ class _LogsPageState extends ConsumerState<LogsPage> {
   Future<void> _joinTerminal() async {
     final stack = _stack();
     if (stack == null) return;
-    _lines.clear();
+    _terminal.write('\x1b[2J\x1b[H');
     _activeTerminalName = _combinedTerminalName(stack.endpoint ?? '');
     final result = await ref
         .read(dockgeSessionProvider.notifier)
         .joinCombinedTerminal(stack);
-    if (!mounted || result.ok) return;
+    if (!mounted) return;
+    if (result.ok) {
+      final buffer = result.data;
+      if (buffer != null && buffer.isNotEmpty) {
+        _terminal.write(buffer);
+      }
+      return;
+    }
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(result.message ?? 'Terminal error')));
-  }
-
-  Future<void> _send() async {
-    final command = _commandController.text;
-    if (command.isEmpty) return;
-    _commandController.clear();
-    final stack = _stack();
-    if (stack == null) return;
-    await ref
-        .read(dockgeSessionProvider.notifier)
-        .terminalInput(stack, command);
   }
 
   dynamic _stack() {

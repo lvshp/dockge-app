@@ -2,6 +2,7 @@ import 'package:dockge_app/src/core/session/session.dart';
 import 'package:dockge_app/src/features/common/feature_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:xterm/xterm.dart';
 
 class ServiceTerminalPage extends ConsumerStatefulWidget {
   const ServiceTerminalPage({
@@ -14,12 +15,14 @@ class ServiceTerminalPage extends ConsumerStatefulWidget {
   final String serviceName;
 
   @override
-  ConsumerState<ServiceTerminalPage> createState() => _ServiceTerminalPageState();
+  ConsumerState<ServiceTerminalPage> createState() =>
+      _ServiceTerminalPageState();
 }
 
 class _ServiceTerminalPageState extends ConsumerState<ServiceTerminalPage> {
   final _commandController = TextEditingController();
-  final _lines = <String>[];
+  late final Terminal _terminal;
+  late final TerminalController _terminalController;
   bool _follow = true;
   String _activeTerminalName = '';
 
@@ -29,19 +32,40 @@ class _ServiceTerminalPageState extends ConsumerState<ServiceTerminalPage> {
     final matchedStacks = session.stacks.where(
       (stack) => stack.name == widget.stackName,
     );
-    final endpoint = matchedStacks.isEmpty ? '' : matchedStacks.first.endpoint ?? '';
-    _activeTerminalName = 'container-exec-$endpoint-${widget.stackName}-${widget.serviceName}-0';
+    final endpoint = matchedStacks.isEmpty
+        ? ''
+        : matchedStacks.first.endpoint ?? '';
+    _activeTerminalName =
+        'container-exec-$endpoint-${widget.stackName}-${widget.serviceName}-0';
   }
 
   @override
   void initState() {
     super.initState();
+    _terminal = Terminal(maxLines: 10000);
+    _terminalController = TerminalController();
+    _terminal.onOutput = (data) {
+      ref
+          .read(dockgeSessionProvider.notifier)
+          .serviceTerminalInput(widget.stackName, widget.serviceName, data);
+    };
+    _terminal.onResize = (cols, rows, pixelWidth, pixelHeight) {
+      ref
+          .read(dockgeSessionProvider.notifier)
+          .serviceTerminalResize(
+            widget.stackName,
+            widget.serviceName,
+            rows: rows,
+            cols: cols,
+          );
+    };
     WidgetsBinding.instance.addPostFrameCallback((_) => _joinTerminal());
   }
 
   @override
   void dispose() {
     _commandController.dispose();
+    _terminalController.dispose();
     super.dispose();
   }
 
@@ -59,16 +83,12 @@ class _ServiceTerminalPageState extends ConsumerState<ServiceTerminalPage> {
           event.terminalName != _activeTerminalName) {
         return;
       }
-      if (mounted) setState(() => _lines.add(event.data));
+      _terminal.write(event.data);
     });
 
     final terminalBg = scheme.brightness == Brightness.dark
         ? const Color(0xFF1A1B1E)
         : const Color(0xFF2B2D31);
-    final terminalFg = scheme.brightness == Brightness.dark
-        ? const Color(0xFFA9D4A0)
-        : const Color(0xFF4EC9B0);
-
     return Scaffold(
       appBar: AppBar(
         title: Text('>_${widget.serviceName}'),
@@ -104,7 +124,10 @@ class _ServiceTerminalPageState extends ConsumerState<ServiceTerminalPage> {
                 FilterChip(
                   selected: _follow,
                   label: Text(l10n.follow),
-                  avatar: const Icon(Icons.vertical_align_bottom_rounded, size: 16),
+                  avatar: const Icon(
+                    Icons.vertical_align_bottom_rounded,
+                    size: 16,
+                  ),
                   onSelected: (value) => setState(() => _follow = value),
                 ),
               ],
@@ -119,37 +142,21 @@ class _ServiceTerminalPageState extends ConsumerState<ServiceTerminalPage> {
                 color: terminalBg,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: _lines.isEmpty
-                  ? Center(
-                      child: Text(
-                        session.connected
-                            ? l10n.waitingForTerminalOutput
-                            : l10n.connectToServerFirst,
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontFamily: 'monospace',
-                          fontSize: 13,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      reverse: _follow,
-                      itemCount: _lines.length,
-                      itemBuilder: (context, index) {
-                        final line = _follow
-                            ? _lines[_lines.length - index - 1]
-                            : _lines[index];
-                        return SelectableText(
-                          line,
-                          style: TextStyle(
-                            color: terminalFg,
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                            height: 1.5,
-                          ),
-                        );
-                      },
-                    ),
+              child: TerminalView(
+                _terminal,
+                controller: _terminalController,
+                autofocus: true,
+                backgroundOpacity: 0,
+                padding: const EdgeInsets.all(2),
+                textStyle: TerminalStyle(
+                  fontSize: 13,
+                  height: 1.25,
+                  fontFamily: 'monospace',
+                ),
+                keyboardType: TextInputType.text,
+                deleteDetection: true,
+                readOnly: !session.connected,
+              ),
             ),
           ),
           // 命令输入区
@@ -185,15 +192,22 @@ class _ServiceTerminalPageState extends ConsumerState<ServiceTerminalPage> {
   }
 
   Future<void> _joinTerminal() async {
-    _lines.clear();
+    _terminal.write('\x1b[2J\x1b[H');
     _resolveTerminalName();
     final result = await ref
         .read(dockgeSessionProvider.notifier)
         .joinServiceTerminal(widget.stackName, widget.serviceName);
-    if (!mounted || result.ok) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message ?? 'Terminal error')),
-    );
+    if (!mounted) return;
+    if (result.ok) {
+      final buffer = result.data;
+      if (buffer != null && buffer.isNotEmpty) {
+        _terminal.write(buffer);
+      }
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message ?? 'Terminal error')));
   }
 
   Future<void> _send() async {
@@ -205,7 +219,7 @@ class _ServiceTerminalPageState extends ConsumerState<ServiceTerminalPage> {
         .serviceTerminalInput(
           widget.stackName,
           widget.serviceName,
-          command,
+          '$command\r',
         );
   }
 }
